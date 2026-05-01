@@ -25,19 +25,18 @@ func main() {
 		log.Fatalf("could not set username: %v", err)
 	}
 
-	_, queue, err := pubsub.DeclareAndBind(
+	gameState := gamelogic.NewGameState(uname)
+
+	if err := pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilDirect,
-		routing.PauseKey+"."+uname,
+		routing.PauseKey+"."+gameState.GetUsername(),
 		routing.PauseKey,
 		pubsub.SimpleQueueTransient,
-	)
-	if err != nil {
-		log.Fatalf("could not subscribe to pause: %v", err)
+		handlerPause(gameState),
+	); err != nil {
+		log.Fatalf("could not subscribe to pause queue: %v\n", err)
 	}
-	fmt.Printf("Queue %v declared and bound!\n", queue.Name)
-
-	gameState := gamelogic.NewGameState(uname)
 
 	for {
 		words := gamelogic.GetInput()
@@ -51,16 +50,10 @@ func main() {
 				log.Printf("could not spawn new unit: %v", err)
 			}
 		case "move":
-			mv, err := gameState.CommandMove(words)
+			_, err := gameState.CommandMove(words)
 			if err != nil {
 				log.Printf("could not move unit: %v", err)
 			}
-
-			log.Printf(
-				"player %s successfuly moved unit to location %s",
-				mv.Player.Username,
-				mv.ToLocation,
-			)
 		case "status":
 			gameState.CommandStatus()
 		case "help":
@@ -73,5 +66,12 @@ func main() {
 		default:
 			fmt.Println("unknown command")
 		}
+	}
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
 	}
 }
