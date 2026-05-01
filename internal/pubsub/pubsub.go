@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -14,14 +13,14 @@ type Acktype int
 type SimpleQueueType int
 
 const (
-	Ack Acktype = iota
-	NackRequeue
-	NackDiscard
+	SimpleQueueDurable SimpleQueueType = iota
+	SimpleQueueTransient
 )
 
 const (
-	SimpleQueueDurable SimpleQueueType = iota
-	SimpleQueueTransient
+	Ack Acktype = iota
+	NackDiscard
+	NackRequeue
 )
 
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
@@ -45,40 +44,51 @@ func SubscribeJSON[T any](
 	exchange,
 	queueName,
 	key string,
-	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
+	queueType SimpleQueueType,
 	handler func(T) Acktype,
 ) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
-		return fmt.Errorf("could not bind queue: %v", err)
+		return fmt.Errorf("could not declare and bind queue: %v", err)
 	}
 
-	deliveryCh, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	msgs, err := ch.Consume(
+		queue.Name, // queue
+		"",         // consumer
+		false,      // auto-ack
+		false,      // exclusive
+		false,      // no-local
+		false,      // no-wait
+		nil,        // args
+	)
 	if err != nil {
-		return fmt.Errorf("could not start consuming from the queue: %v", err)
+		return fmt.Errorf("could not consume messages: %v", err)
+	}
+
+	unmarshaller := func(data []byte) (T, error) {
+		var target T
+		err := json.Unmarshal(data, &target)
+		return target, err
 	}
 
 	go func() {
 		defer ch.Close()
-		for msg := range deliveryCh {
-			var data T
-			if err := json.Unmarshal(msg.Body, &data); err != nil {
-				log.Printf("could not unmarshal message: %v\n", err)
+		for msg := range msgs {
+			target, err := unmarshaller(msg.Body)
+			if err != nil {
+				fmt.Printf("could not unmarshal message: %v\n", err)
 				continue
 			}
-
-			ackType := handler(data)
-			switch ackType {
+			switch handler(target) {
 			case Ack:
 				msg.Ack(false)
-			case NackRequeue:
-				msg.Nack(false, true)
 			case NackDiscard:
 				msg.Nack(false, false)
+			case NackRequeue:
+				msg.Nack(false, true)
 			}
 		}
 	}()
-
 	return nil
 }
 
@@ -101,7 +111,7 @@ func DeclareAndBind(
 		queueType != SimpleQueueDurable, // exclusive
 		false,                           // no-wait
 		amqp.Table{
-			"x-dead-letter-exchange": "peril_dlx", // args
+			"x-dead-letter-exchange": "peril_dlx",
 		},
 	)
 	if err != nil {
