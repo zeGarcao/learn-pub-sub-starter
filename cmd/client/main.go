@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -28,16 +27,17 @@ func main() {
 		log.Fatalf("could not set username: %v", err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(
+	_, queue, err := pubsub.DeclareAndBind(
 		conn,
 		routing.ExchangePerilDirect,
-		strings.Join([]string{routing.PauseKey, uname}, "."),
+		routing.PauseKey+"."+uname,
 		routing.PauseKey,
-		"transient",
+		pubsub.SimpleQueueTransient,
 	)
 	if err != nil {
-		log.Fatalf("could not declare and bind RabbitMQ queue: %v", err)
+		log.Fatalf("could not subscribe to pause: %v", err)
 	}
+	fmt.Printf("Queue %v declared and bound!\n", queue.Name)
 
 	// wait for ctrl+c
 	signalChan := make(chan os.Signal, 1)
