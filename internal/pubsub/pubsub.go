@@ -14,6 +14,12 @@ type Acktype int
 type SimpleQueueType int
 
 const (
+	Ack Acktype = iota
+	NackRequeue
+	NackDiscard
+)
+
+const (
 	SimpleQueueDurable SimpleQueueType = iota
 	SimpleQueueTransient
 )
@@ -40,7 +46,7 @@ func SubscribeJSON[T any](
 	queueName,
 	key string,
 	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
-	handler func(T),
+	handler func(T) Acktype,
 ) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -61,8 +67,33 @@ func SubscribeJSON[T any](
 				continue
 			}
 
-			handler(data)
-			msg.Ack(false)
+			ackType := handler(data)
+			switch ackType {
+			case Ack:
+				fmt.Printf(
+					"message id %s with routing key %s acknowledged\n",
+					msg.MessageId,
+					msg.RoutingKey,
+				)
+
+				msg.Ack(false)
+			case NackRequeue:
+				fmt.Printf(
+					"message id %s with routing key %s negative acknowledged and requeued\n",
+					msg.MessageId,
+					msg.RoutingKey,
+				)
+
+				msg.Nack(false, true)
+			case NackDiscard:
+				fmt.Printf(
+					"message id %s with routing key %s negative acknowledged and discard\n",
+					msg.MessageId,
+					msg.RoutingKey,
+				)
+
+				msg.Nack(false, false)
+			}
 		}
 	}()
 
