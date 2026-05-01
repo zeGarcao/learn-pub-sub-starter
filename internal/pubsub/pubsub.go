@@ -70,28 +70,10 @@ func SubscribeJSON[T any](
 			ackType := handler(data)
 			switch ackType {
 			case Ack:
-				fmt.Printf(
-					"message id %s with routing key %s acknowledged\n",
-					msg.MessageId,
-					msg.RoutingKey,
-				)
-
 				msg.Ack(false)
 			case NackRequeue:
-				fmt.Printf(
-					"message id %s with routing key %s negative acknowledged and requeued\n",
-					msg.MessageId,
-					msg.RoutingKey,
-				)
-
 				msg.Nack(false, true)
 			case NackDiscard:
-				fmt.Printf(
-					"message id %s with routing key %s negative acknowledged and discard\n",
-					msg.MessageId,
-					msg.RoutingKey,
-				)
-
 				msg.Nack(false, false)
 			}
 		}
